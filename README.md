@@ -10,7 +10,7 @@ An isothermal implementation of SDPD based on Español and Revenga, Phys. Rev. E
 
         patch -p1 < patch.sdpd
 
-* Then include this package by typing the following command in `src` directory:
+* Then include SPH package by typing the following command in `src` directory:
 
         make yes-user-sph
 
