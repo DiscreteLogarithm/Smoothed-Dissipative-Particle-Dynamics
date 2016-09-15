@@ -10,9 +10,18 @@ An isothermal implementation of SDPD based on Español and Revenga, Phys. Rev. E
 
         patch -p1 < patch.sdpd
 
-* Then include SPH package by typing the following command in `src` directory:
+* Then include USER-SPH package by typing the following commands in `src` directory:
 
         make yes-user-sph
+
+* The RIGID package is a prerequisite for `fix rigid/sph`. If you like to be able to define rigid bodies
+include this as well:
+
+        make yes-rigid
+
+* Now include the USER-SDPD package
+
+        make yes-user-sdpd
 
 * Then build again as usual.
 
@@ -20,7 +29,7 @@ An isothermal implementation of SDPD based on Español and Revenga, Phys. Rev. E
 
 * Use following command in `src` directory:
 
-        make no-user-sph
+        make no-user-sdpd
 
 * Then build again
 
