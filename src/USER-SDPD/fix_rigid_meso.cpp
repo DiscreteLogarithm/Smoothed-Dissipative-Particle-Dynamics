@@ -12,36 +12,31 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors:
-      Morteza Jalalvand         jalalvand.m AT iasbs.ac.ir
-      Mohammad Charsooghi       charsooghi AT iasbs.ac.ir
-      Sarah Mohammadinejad      sarah AT iasbs.ac.ir
-    
-    This is an extension of fix/rigid/nve to SPH particles
-    You can see copyright notice of fix/rigid/nve authors bellow
-------------------------------------------------------------------------- */
-
-/* ----------------------------------------------------------------------
    Contributing author: Tony Sheh (U Michigan), Trung Dac Nguyen (U Michigan)
    references: Kamberaj et al., J. Chem. Phys. 122, 224114 (2005)
                Miller et al., J Chem Phys. 116, 8649-8659 (2002)
 ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author:
+      Morteza Jalalvand (IASBS)  jalalvand.m AT gmail.com
+    
+    This is an extension of fix/rigid/nve to SPH/SDPD particles
+    You can see the original copyright notice of fix/rigid authors above
+    Note that the Kamberaj paper was related to the nvt variant
+    and all codes relevant to that has been removed
+------------------------------------------------------------------------- */
+
 #include <math.h>
-#include <stdio.h>
-#include <string.h>
-#include "fix_rigid_sph.h"
+#include "fix_rigid_meso.h"
 #include "math_extra.h"
 #include "atom.h"
 #include "compute.h"
 #include "domain.h"
 #include "update.h"
 #include "modify.h"
-#include "fix_deform.h"
 #include "group.h"
-#include "comm.h"
 #include "force.h"
-#include "kspace.h"
 #include "output.h"
 #include "memory.h"
 #include "error.h"
@@ -49,21 +44,21 @@
 using namespace LAMMPS_NS;
 using namespace FixConst;
 
-#define EPSILON 1.0e-7
-
 /* ---------------------------------------------------------------------- */
 
-FixRigidSPH::FixRigidSPH (LAMMPS *lmp, int narg, char **arg) :
-  FixRigid (lmp, narg, arg) {
+FixRigidMeso::FixRigidMeso (LAMMPS *lmp, int narg, char **arg) :
+FixRigid (lmp, narg, arg) {
+  scalar_flag = 0;
+  size_array_cols = 28;
   if ((atom->e_flag != 1) || (atom->rho_flag != 1))
-    error->all (FLERR, "fix rigid/sph command requires atom_style with"
+    error->all (FLERR, "fix rigid/meso command requires atom_style with"
                        " both energy and density");
   
   if (langflag || tstat_flag)
-    error->all (FLERR,"Can not use thermostat with fix rigid/sph");
+    error->all (FLERR,"Can not use thermostat with fix rigid/meso");
   
   if (pstat_flag)
-    error->all (FLERR,"Can not use barostat with fix rigid/sph");
+    error->all (FLERR,"Can not use barostat with fix rigid/meso");
 
   // memory allocation and initialization
 
@@ -72,13 +67,13 @@ FixRigidSPH::FixRigidSPH (LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixRigidSPH::~FixRigidSPH() {
+FixRigidMeso::~FixRigidMeso () {
   memory->destroy(conjqm);
 }
 
 /* ---------------------------------------------------------------------- */
 
-int FixRigidSPH::setmask() {
+int FixRigidMeso::setmask () {
   int mask = 0;
   mask |= INITIAL_INTEGRATE;
   mask |= FINAL_INTEGRATE;
@@ -88,7 +83,7 @@ int FixRigidSPH::setmask() {
 
 /* ---------------------------------------------------------------------- */
 
-void FixRigidSPH::setup(int vflag) {
+void FixRigidMeso::setup (int vflag) {
   FixRigid::setup(vflag);
 
   double mbody[3];
@@ -108,7 +103,7 @@ void FixRigidSPH::setup(int vflag) {
    see Kamberaj paper for step references
 ------------------------------------------------------------------------- */
 
-void FixRigidSPH::initial_integrate(int vflag) {
+void FixRigidMeso::initial_integrate (int vflag) {
   double dtfm,mbody[3],tbody[3],fquat[4];
   double dtf2 = dtf * 2.0;
 
@@ -183,83 +178,21 @@ void FixRigidSPH::initial_integrate(int vflag) {
 
 /* ---------------------------------------------------------------------- */
 
-void FixRigidSPH::final_integrate() {
+void FixRigidMeso::final_integrate () {
   int i,ibody;
   double dtfm,xy,xz,yz;
   double mbody[3],tbody[3],fquat[4];
 
   double dtf2 = dtf * 2.0;
 
-  // sum over atoms to get force and torque on rigid body
+  // late calculation of forces and torques (if requested)
 
-  double **x = atom->x;
-  double **f = atom->f;
-  int nlocal = atom->nlocal;
-
-  double xprd = domain->xprd;
-  double yprd = domain->yprd;
-  double zprd = domain->zprd;
-  if (triclinic) {
-    xy = domain->xy;
-    xz = domain->xz;
-    yz = domain->yz;
-  }
-
-  int xbox,ybox,zbox;
-  double xunwrap,yunwrap,zunwrap,dx,dy,dz;
-  for (ibody = 0; ibody < nbody; ibody++)
-    for (i = 0; i < 6; i++) sum[ibody][i] = 0.0;
-
-  for (i = 0; i < nlocal; i++) {
-    if (body[i] < 0) continue;
-    ibody = body[i];
-
-    sum[ibody][0] += f[i][0];
-    sum[ibody][1] += f[i][1];
-    sum[ibody][2] += f[i][2];
-
-    xbox = (xcmimage[i] & IMGMASK) - IMGMAX;
-    ybox = (xcmimage[i] >> IMGBITS & IMGMASK) - IMGMAX;
-    zbox = (xcmimage[i] >> IMG2BITS) - IMGMAX;
-
-    if (triclinic == 0) {
-      xunwrap = x[i][0] + xbox*xprd;
-      yunwrap = x[i][1] + ybox*yprd;
-      zunwrap = x[i][2] + zbox*zprd;
-    } else {
-      xunwrap = x[i][0] + xbox*xprd + ybox*xy + zbox*xz;
-      yunwrap = x[i][1] + ybox*yprd + zbox*yz;
-      zunwrap = x[i][2] + zbox*zprd;
-    }
-
-    dx = xunwrap - xcm[ibody][0];
-    dy = yunwrap - xcm[ibody][1];
-    dz = zunwrap - xcm[ibody][2];
-
-    sum[ibody][3] += dy*f[i][2] - dz*f[i][1];
-    sum[ibody][4] += dz*f[i][0] - dx*f[i][2];
-    sum[ibody][5] += dx*f[i][1] - dy*f[i][0];
-  }
-
-  // extended particles add their torque to torque of body
-
-  if (extended) {
-    // TBD
-  }
-
-  MPI_Allreduce (sum[0],all[0],6*nbody,MPI_DOUBLE,MPI_SUM,world);
+  if (!earlyflag) compute_forces_and_torques();
 
   // update vcm and angmom
-  // include Langevin thermostat forces
   // fflag,tflag = 0 for some dimensions in 2d
 
   for (ibody = 0; ibody < nbody; ibody++) {
-    fcm[ibody][0] = all[ibody][0];
-    fcm[ibody][1] = all[ibody][1];
-    fcm[ibody][2] = all[ibody][2];
-    torque[ibody][0] = all[ibody][3];
-    torque[ibody][1] = all[ibody][4];
-    torque[ibody][2] = all[ibody][5];
 
     // update vcm by 1/2 step
 
@@ -310,7 +243,7 @@ void FixRigidSPH::final_integrate() {
    v = Vcm + (W cross (x - Xcm))
 ------------------------------------------------------------------------- */
 
-void FixRigidSPH::set_xv() {
+void FixRigidMeso::set_xv () {
   int ibody;
   int xbox,ybox,zbox;
   double x0,x1,x2,v0,v1,v2,fc0,fc1,fc2,massone;
@@ -442,7 +375,7 @@ void FixRigidSPH::set_xv() {
    v = Vcm + (W cross (x - Xcm))
 ------------------------------------------------------------------------- */
 
-void FixRigidSPH::set_v() {
+void FixRigidMeso::set_v () {
   int xbox,ybox,zbox;
   double x0,x1,x2,v0,v1,v2,fc0,fc1,fc2,massone;
   double xy,xz,yz;
@@ -541,4 +474,27 @@ void FixRigidSPH::set_v() {
   if (extended) {
     // TBD
   }
+}
+
+/* ----------------------------------------------------------------------
+   return attributes of a rigid body
+   19 values per body
+   xcm = 0,1,2; vcm = 3,4,5; fcm = 6,7,8;
+   quat = 9,10,11,12; omega = 13,14,15; torque = 16,17,18;
+   inertia = 19,20,21; angmom = 22,23,24;
+   image = 25,26,27
+------------------------------------------------------------------------- */
+
+double FixRigidMeso::compute_array (int i, int j) {
+  if (j < 3) return xcm[i][j];
+  if (j < 6) return vcm[i][j-3];
+  if (j < 9) return fcm[i][j-6];
+  if (j < 13) return quat[i][j-9];
+  if (j < 16) return omega[i][j-13];
+  if (j < 19) return torque[i][j-16];
+  if (j < 22) return inertia[i][j-19];
+  if (j < 25) return angmom[i][j-22];
+  if (j == 25) return (imagebody[i] & IMGMASK) - IMGMAX;
+  if (j == 26) return (imagebody[i] >> IMGBITS & IMGMASK) - IMGMAX;
+  return (imagebody[i] >> IMG2BITS) - IMGMAX;
 }

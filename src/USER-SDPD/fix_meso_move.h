@@ -13,42 +13,41 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(move/sph,FixMoveSPH)
+FixStyle(meso/move,FixMesoMove)
 
 #else
 
-#ifndef LMP_FIX_MOVE_SPH_H
-#define LMP_FIX_MOVE_SPH_H
+#ifndef LMP_FIX_MESO_MOVE_H
+#define LMP_FIX_MESO_MOVE_H
 
-#include "stdio.h"
 #include "fix.h"
 
 namespace LAMMPS_NS {
 
-class FixMoveSPH : public Fix {
+class FixMesoMove : public Fix {
  public:
-  FixMoveSPH(class LAMMPS *, int, char **);
-  ~FixMoveSPH();
-  int setmask();
-  void init();
-  void setup_pre_force(int);
-  void initial_integrate(int);
-  void final_integrate();
+  FixMesoMove (class LAMMPS *, int, char **);
+  ~FixMesoMove ();
+  int setmask ();
+  void init ();
+  void setup_pre_force (int);
+  void initial_integrate (int);
+  void final_integrate ();
 
-  double memory_usage();
-  void write_restart(FILE *);
-  void restart(char *);
-  void grow_arrays(int);
-  void copy_arrays(int, int, int);
-  void set_arrays(int);
-  int pack_exchange(int, double *);
-  int unpack_exchange(int, double *);
-  int pack_restart(int, double *);
-  void unpack_restart(int, int);
-  int maxsize_restart();
-  int size_restart(int);
+  double memory_usage ();
+  void write_restart (FILE *);
+  void restart (char *);
+  void grow_arrays (int);
+  void copy_arrays (int, int, int);
+  void set_arrays (int);
+  int pack_exchange (int, double *);
+  int unpack_exchange (int, double *);
+  int pack_restart (int, double *);
+  void unpack_restart (int, int);
+  int maxsize_restart ();
+  int size_restart (int);
 
-  void reset_dt();
+  void reset_dt ();
 
  private:
   char *xvarstr,*yvarstr,*zvarstr,*vxvarstr,*vyvarstr,*vzvarstr;
@@ -60,7 +59,6 @@ class FixMoveSPH : public Fix {
   double dt,dtv,dtf;
   int xvar,yvar,zvar,vxvar,vyvar,vzvar;
   int xvarstyle,yvarstyle,zvarstyle,vxvarstyle,vyvarstyle,vzvarstyle;
-  int omega_flag,nlevels_respa;
   int time_origin;
 
   double **xoriginal;         // original coords of atoms
@@ -82,48 +80,48 @@ Self-explanatory.  Check the input script syntax and compare to the
 documentation for the command.  You can use -echo screen as a
 command-line option when running LAMMPS to see the offending line.
 
-E: Fix move cannot set linear z motion for 2d problem
+E: Fix meso/move cannot set linear z motion for 2d problem
 
 Self-explanatory.
 
-E: Fix move cannot set wiggle z motion for 2d problem
+E: Fix meso/move cannot set wiggle z motion for 2d problem
 
 Self-explanatory.
 
-E: Fix move cannot rotate aroung non z-axis for 2d problem
+E: Fix meso/move cannot rotate aroung non z-axis for 2d problem
 
 Self-explanatory.
 
-E: Fix move cannot define z or vz variable for 2d problem
+E: Fix meso/move cannot define z or vz variable for 2d problem
 
 Self-explanatory.
 
-W: Fix move does not update angular momentum
+W: Fix meso/move does not update angular momentum
 
-Atoms store this quantity, but fix move does not (yet) update it.
+Atoms store this quantity, but fix meso/move does not (yet) update it.
 
-W: Fix move does not update quaternions
+W: Fix meso/move does not update quaternions
 
-Atoms store this quantity, but fix move does not (yet) update it.
+Atoms store this quantity, but fix meso/move does not (yet) update it.
 
-E: Zero length rotation vector with fix move
-
-Self-explanatory.
-
-E: Variable name for fix move does not exist
+E: Zero length rotation vector with fix meso/move
 
 Self-explanatory.
 
-E: Variable for fix move is invalid style
+E: Variable name for fix meso/move does not exist
+
+Self-explanatory.
+
+E: Variable for fix meso/move is invalid style
 
 Only equal-style variables can be used.
 
-E: Cannot add atoms to fix move variable
+E: Cannot add atoms to fix meso/move variable
 
 Atoms can not be added afterwards to this fix option.
 
-E: Resetting timestep size is not allowed with fix move
+E: Resetting timestep size is not allowed with fix meso/move
 
-This is because fix move is moving atoms based on elapsed time.
+This is because fix meso/move is moving atoms based on elapsed time.
 
 */

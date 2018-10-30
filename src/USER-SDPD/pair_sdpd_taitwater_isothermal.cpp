@@ -11,6 +11,13 @@
  See the README file in the top-level LAMMPS directory.
  ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author:
+      Morteza Jalalvand (IASBS)  jalalvand.m AT gmail.com
+    
+    references: Espanol and Revenga, Phys Rev E 67, 026705 (2003)
+------------------------------------------------------------------------- */
+
 #include <math.h>
 #include <stdlib.h>
 #include "pair_sdpd_taitwater_isothermal.h"
@@ -22,13 +29,18 @@
 #include "error.h"
 #include "domain.h"
 #include "update.h"
+#ifndef USE_ZEST
 #include "random_mars.h"
+#endif
 
 using namespace LAMMPS_NS;
 
+static const double sqrt_2_inv = std::sqrt(0.5);
+
 /* ---------------------------------------------------------------------- */
 
-PairSDPDTaitwaterIsothermal::PairSDPDTaitwaterIsothermal (LAMMPS *lmp) : Pair (lmp) {
+PairSDPDTaitwaterIsothermal::PairSDPDTaitwaterIsothermal (LAMMPS *lmp)
+: Pair (lmp) {
   restartinfo = 0;
 }
 
@@ -53,8 +65,10 @@ void PairSDPDTaitwaterIsothermal::compute (int eflag, int vflag) {
   double xtmp, ytmp, ztmp, delx, dely, delz, fpair;
 
   int *ilist, *jlist, *numneigh, **firstneigh;
-  double vxtmp, vytmp, vztmp, imass, jmass, fi, fj, fvisc, h, ih, ihsq, velx, vely, velz;
+  double vxtmp, vytmp, vztmp, imass, jmass, fi, fj, fvisc;
+  double h, ih, ihsq, velx, vely, velz;
   double rsq, tmp, wfd, delVdotDelR, deltaE;
+  double prefactor, wiener[3][3], f_random[3];
 
   if (eflag || vflag) ev_setup (eflag, vflag);
   else evflag = vflag_fdotr = 0;
@@ -144,45 +158,48 @@ void PairSDPDTaitwaterIsothermal::compute (int eflag, int vflag) {
 
         // Espanol Viscosity (Espanol, 2003)
 
-        fvisc = viscosity * imass * jmass * wfd * (1/rho[i]/rho[i] + 1/rho[j]/rho[j]);
+        fvisc = (5. / 3.) * viscosity * imass * jmass * wfd / (rho[i]*rho[j]);
 
         // total pair force
         fpair = -imass * jmass * (fi + fj) * wfd;
 
         // random force calculation
         // independent increments of a Wiener process matrix
-        double wiener[3][3] = {0};
-        for (int i=0; i<dimension; ++i) for (int j=0; j<dimension; ++j)
-          wiener[i][j] = random->gaussian ();
+#ifdef USE_ZEST
+        wiener[0][0] = gaussian (generator);
+        wiener[1][1] = gaussian (generator);
+        wiener[2][2] = gaussian (generator);
         
-        // symmetric part
-        wiener[0][1] = wiener[1][0] = (wiener[0][1] + wiener[1][0]) / 2.;
-        wiener[0][2] = wiener[2][0] = (wiener[0][2] + wiener[2][0]) / 2.;
-        wiener[1][2] = wiener[2][1] = (wiener[1][2] + wiener[2][1]) / 2.;
+        wiener[0][1] = wiener[1][0] = sqrt_2_inv * gaussian (generator);
+        wiener[0][2] = wiener[2][0] = sqrt_2_inv * gaussian (generator);
+        wiener[1][2] = wiener[2][1] = sqrt_2_inv * gaussian (generator);
+#else
+        wiener[0][0] = random->gaussian ();
+        wiener[1][1] = random->gaussian ();
+        wiener[2][2] = random->gaussian ();
         
-        // traceless part
-        double trace_over_dim = (wiener[0][0] + wiener[1][1] + wiener[2][2]) / dimension;
-        wiener[0][0] -= trace_over_dim;
-        wiener[1][1] -= trace_over_dim;
-        wiener[2][2] -= trace_over_dim;
+        wiener[0][1] = wiener[1][0] = sqrt_2_inv * random->gaussian ();
+        wiener[0][2] = wiener[2][0] = sqrt_2_inv * random->gaussian ();
+        wiener[1][2] = wiener[2][1] = sqrt_2_inv * random->gaussian ();
+#endif
         
-        double prefactor = sqrt (-4. * kBoltzmann*temperature * fvisc * dtinv) / r;
-//         printf ("%f\n", prefactor);
-        double f_random[3] = {0};
-        for (int i=0; i<dimension; ++i)
-          f_random[i] = prefactor * (wiener[i][0]*delx + wiener[i][1]*dely + wiener[i][2]*delz);
+        prefactor = sqrt (-4. * kBoltzmann*temperature * fvisc * dtinv) / r;
         
-        f[i][0] += delx * fpair + velx * fvisc + f_random[0];
-        f[i][1] += dely * fpair + vely * fvisc + f_random[1];
-        f[i][2] += delz * fpair + velz * fvisc + f_random[2];
+        f_random[0] = prefactor * (wiener[0][0]*delx + wiener[0][1]*dely + wiener[0][2]*delz);
+        f_random[1] = prefactor * (wiener[1][0]*delx + wiener[1][1]*dely + wiener[1][2]*delz);
+        f_random[2] = prefactor * (wiener[2][0]*delx + wiener[2][1]*dely + wiener[2][2]*delz);
+        
+        f[i][0] += delx * fpair + (velx + delx * delVdotDelR / rsq) * fvisc + f_random[0];
+        f[i][1] += dely * fpair + (vely + dely * delVdotDelR / rsq) * fvisc + f_random[1];
+        f[i][2] += delz * fpair + (velz + delz * delVdotDelR / rsq) * fvisc + f_random[2];
 
         // and change in density
         drho[i] += jmass * delVdotDelR * wfd;
 
         if (newton_pair || j < nlocal) {
-          f[j][0] -= delx * fpair + velx * fvisc + f_random[0];
-          f[j][1] -= dely * fpair + vely * fvisc + f_random[1];
-          f[j][2] -= delz * fpair + velz * fvisc + f_random[2];
+          f[j][0] -= delx * fpair + (velx + delx * delVdotDelR / rsq) * fvisc + f_random[0];
+          f[j][1] -= dely * fpair + (vely + dely * delVdotDelR / rsq) * fvisc + f_random[1];
+          f[j][2] -= delz * fpair + (velz + delz * delVdotDelR / rsq) * fvisc + f_random[2];
           drho[j] += imass * delVdotDelR * wfd;
         }
 
@@ -233,7 +250,11 @@ void PairSDPDTaitwaterIsothermal::settings (int narg, char **arg) {
   // seed is immune to underflow/overflow because it is unsigned
   seed = comm->nprocs + comm->me + atom->nlocal;
   if (narg == 3) seed += force->inumeric (FLERR, arg[2]);
+#ifdef USE_ZEST
+  generator.seed (seed);
+#else
   random = new RanMars (lmp, seed);
+#endif
 }
 
 /* ----------------------------------------------------------------------
@@ -247,8 +268,8 @@ void PairSDPDTaitwaterIsothermal::coeff (int narg, char **arg) {
   if (!allocated) allocate();
 
   int ilo, ihi, jlo, jhi;
-  force->bounds (arg[0], atom->ntypes, ilo, ihi);
-  force->bounds (arg[1], atom->ntypes, jlo, jhi);
+  force->bounds (FLERR, arg[0], atom->ntypes, ilo, ihi);
+  force->bounds (FLERR, arg[1], atom->ntypes, jlo, jhi);
 
   double rho0_one = force->numeric (FLERR,arg[2]);
   double soundspeed_one = force->numeric (FLERR,arg[3]);
@@ -280,7 +301,7 @@ void PairSDPDTaitwaterIsothermal::coeff (int narg, char **arg) {
  init for one type pair i,j and corresponding j,i
  ------------------------------------------------------------------------- */
 
-double PairSDPDTaitwaterIsothermal::init_one(int i, int j) {
+double PairSDPDTaitwaterIsothermal::init_one (int i, int j) {
   if (setflag[i][j] == 0) 
     error->all(FLERR,"Not all pair sph/taitwater/morris coeffs are not set");
 
@@ -291,8 +312,9 @@ double PairSDPDTaitwaterIsothermal::init_one(int i, int j) {
 
 /* ---------------------------------------------------------------------- */
 
-double PairSDPDTaitwaterIsothermal::single (int, int, int, int,
-    double, double, double, double &fforce) {
+double PairSDPDTaitwaterIsothermal::single (int /*i*/, int /*j*/, int /*itype*/,
+                    int /*jtype*/, double /*rsq*/, double /*factor_coul*/,
+                    double /*factor_lj*/, double &fforce) {
   fforce = 0.0;
 
   return 0.0;

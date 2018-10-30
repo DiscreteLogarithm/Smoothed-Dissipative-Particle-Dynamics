@@ -1,7 +1,11 @@
-# Install/unInstall package files in LAMMPS
+# Install/Uninstall package files in LAMMPS
 # mode = 0/1/2 for uninstall/install/update
 
 mode=$1
+
+# enforce using portable C locale
+LC_ALL=C
+export LC_ALL
 
 # arg1 = file, arg2 = file it depends on
 
@@ -15,16 +19,19 @@ action () {
         echo "  updating src/$1"
       fi
     fi
-  elif (test ! -n "$2") then
+  elif (test -n "$2") then
     if (test ! -e ../$2) then
       rm -f ../$1
     fi
   fi
 }
 
-action pair_sdpd_taitwater_isothermal.cpp atom_vec_meso.cpp
-action pair_sdpd_taitwater_isothermal.h atom_vec_meso.cpp
-action fix_rigid_sph.cpp fix_rigid.cpp
-action fix_rigid_sph.h fix_rigid.cpp
-action fix_move_sph.cpp atom_vec_meso.cpp
-action fix_move_sph.h atom_vec_meso.h
+# package files without dependencies
+action pair_sdpd_taitwater_isothermal.h
+action pair_sdpd_taitwater_isothermal.cpp
+action fix_meso_move.h
+action fix_meso_move.cpp
+
+# package files with dependencies
+action fix_rigid_meso.h   fix_rigid.h
+action fix_rigid_meso.cpp fix_rigid.h

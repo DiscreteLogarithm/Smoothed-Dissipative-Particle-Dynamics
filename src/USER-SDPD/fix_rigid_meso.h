@@ -13,29 +13,31 @@
 
 #ifdef FIX_CLASS
 
-FixStyle(rigid/sph,FixRigidSPH)
+FixStyle(rigid/meso,FixRigidMeso)
 
 #else
 
-#ifndef LMP_FIX_RIGID_SPH_H
-#define LMP_FIX_RIGID_SPH_H
+#ifndef LMP_FIX_RIGID_MESO_H
+#define LMP_FIX_RIGID_MESO_H
 
 #include "fix_rigid.h"
 
 namespace LAMMPS_NS {
 
-class FixRigidSPH : public FixRigid {
+class FixRigidMeso : public FixRigid {
  public:
-  FixRigidSPH (class LAMMPS *, int, char **);
-  ~FixRigidSPH();
-  int setmask();
-  void setup(int);
-  void initial_integrate(int);
-  void final_integrate();
+  FixRigidMeso (class LAMMPS *, int, char **);
+  ~FixRigidMeso ();
+  int setmask ();
+  void setup (int);
+  void initial_integrate (int);
+  void final_integrate ();
+  double compute_scalar () {}
+  double compute_array (int, int);
 
  protected:
-  void set_xv();
-  void set_v();
+  void set_xv ();
+  void set_v ();
   double **conjqm;                    // conjugate quaternion momentum
 };
 
@@ -46,15 +48,15 @@ class FixRigidSPH : public FixRigid {
 
 /* ERROR/WARNING messages:
 
-E: fix rigid/sph command requires atom_style with both energy and density
+E: fix rigid/meso command requires atom_style with both energy and density
 
 You should use atom_style meso with this fix
 
-E: Can not use thermostat with fix rigid/sph
+E: Can not use thermostat with fix rigid/meso
 
 Self-explanatory
 
-E: Can not use barostat with fix rigid/sph
+E: Can not use barostat with fix rigid/meso
 
 Self-explanatory
 

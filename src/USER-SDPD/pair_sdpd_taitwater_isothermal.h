@@ -21,6 +21,10 @@ PairStyle(sdpd/taitwater/isothermal,PairSDPDTaitwaterIsothermal)
 #define LMP_PAIR_SDPD_TAITWATER_MORRIS_ISOTHERMAL_H
 
 #include "pair.h"
+#ifdef USE_ZEST
+#include <random>
+#include "zest.hpp"
+#endif
 
 namespace LAMMPS_NS {
 
@@ -39,10 +43,15 @@ class PairSDPDTaitwaterIsothermal : public Pair {
   double *rho0, *soundspeed, *B;
   double **cut;
 
-  void allocate();
+  void allocate ();
   
   unsigned int seed;
+#ifdef USE_ZEST
+  std::mt19937_64 generator;
+  Ziggurat<zest::StandardNormal,std::mt19937_64> gaussian;
+#else
   class RanMars *random;
+#endif
 };
 
 }

@@ -11,10 +11,14 @@
    See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------------
+   Contributing author:
+      Morteza Jalalvand (IASBS)  jalalvand.m AT gmail.com
+------------------------------------------------------------------------- */
+
 #include "string.h"
-#include "stdlib.h"
 #include "math.h"
-#include "fix_move_sph.h"
+#include "fix_meso_move.h"
 #include "atom.h"
 #include "group.h"
 #include "update.h"
@@ -38,14 +42,16 @@ enum{EQUAL,ATOM};
 
 /* ---------------------------------------------------------------------- */
 
-FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
-  Fix(lmp, narg, arg)
-{
+FixMesoMove::FixMesoMove (LAMMPS *lmp, int narg, char **arg) :
+  Fix(lmp, narg, arg),
+  xvarstr(NULL), yvarstr(NULL), zvarstr(NULL),
+  vxvarstr(NULL), vyvarstr(NULL), vzvarstr(NULL),
+  xoriginal(NULL), displace(NULL), velocity(NULL) {
   if ((atom->e_flag != 1) || (atom->rho_flag != 1))
     error->all(FLERR,
-        "fix meso command requires atom_style with both energy and density");
+        "fix meso/move command requires atom_style with both energy and density");
 
-  if (narg < 4) error->all(FLERR,"Illegal fix move command");
+  if (narg < 4) error->all(FLERR,"Illegal fix meso/move command");
 
   restart_global = 1;
   restart_peratom = 1;
@@ -61,11 +67,9 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
   // parse args
 
   int iarg;
-  xvarstr = yvarstr = zvarstr = NULL;
-  vxvarstr = vyvarstr = vzvarstr = NULL;
 
   if (strcmp(arg[3],"linear") == 0) {
-    if (narg < 7) error->all(FLERR,"Illegal fix move command");
+    if (narg < 7) error->all(FLERR,"Illegal fix meso/move command");
     iarg = 7;
     mstyle = LINEAR;
     if (strcmp(arg[4],"NULL") == 0) vxflag = 0;
@@ -85,7 +89,7 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
     }
 
   } else if (strcmp(arg[3],"wiggle") == 0) {
-    if (narg < 8) error->all(FLERR,"Illegal fix move command");
+    if (narg < 8) error->all(FLERR,"Illegal fix meso/move command");
     iarg = 8;
     mstyle = WIGGLE;
     if (strcmp(arg[4],"NULL") == 0) axflag = 0;
@@ -104,9 +108,10 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
       az = force->numeric(FLERR,arg[6]);
     }
     period = force->numeric(FLERR,arg[7]);
+    if (period <= 0.0) error->all(FLERR,"Illegal fix meso/move command");
 
   } else if (strcmp(arg[3],"rotate") == 0) {
-    if (narg < 11) error->all(FLERR,"Illegal fix move command");
+    if (narg < 11) error->all(FLERR,"Illegal fix meso/move command");
     iarg = 11;
     mstyle = ROTATE;
     point[0] = force->numeric(FLERR,arg[4]);
@@ -116,9 +121,10 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
     axis[1] = force->numeric(FLERR,arg[8]);
     axis[2] = force->numeric(FLERR,arg[9]);
     period = force->numeric(FLERR,arg[10]);
+    if (period <= 0.0) error->all(FLERR,"Illegal fix meso/move command");
 
   } else if (strcmp(arg[3],"variable") == 0) {
-    if (narg < 10) error->all(FLERR,"Illegal fix move command");
+    if (narg < 10) error->all(FLERR,"Illegal fix meso/move command");
     iarg = 10;
     mstyle = VARIABLE;
     if (strcmp(arg[4],"NULL") == 0) xvarstr = NULL;
@@ -126,39 +132,39 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
       int n = strlen(&arg[4][2]) + 1;
       xvarstr = new char[n];
       strcpy(xvarstr,&arg[4][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
     if (strcmp(arg[5],"NULL") == 0) yvarstr = NULL;
     else if (strstr(arg[5],"v_") == arg[5]) {
       int n = strlen(&arg[5][2]) + 1;
       yvarstr = new char[n];
       strcpy(yvarstr,&arg[5][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
     if (strcmp(arg[6],"NULL") == 0) zvarstr = NULL;
     else if (strstr(arg[6],"v_") == arg[6]) {
       int n = strlen(&arg[6][2]) + 1;
       zvarstr = new char[n];
       strcpy(zvarstr,&arg[6][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
     if (strcmp(arg[7],"NULL") == 0) vxvarstr = NULL;
     else if (strstr(arg[7],"v_") == arg[7]) {
       int n = strlen(&arg[7][2]) + 1;
       vxvarstr = new char[n];
       strcpy(vxvarstr,&arg[7][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
     if (strcmp(arg[8],"NULL") == 0) vyvarstr = NULL;
     else if (strstr(arg[8],"v_") == arg[8]) {
       int n = strlen(&arg[8][2]) + 1;
       vyvarstr = new char[n];
       strcpy(vyvarstr,&arg[8][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
     if (strcmp(arg[9],"NULL") == 0) vzvarstr = NULL;
     else if (strstr(arg[9],"v_") == arg[9]) {
       int n = strlen(&arg[9][2]) + 1;
       vzvarstr = new char[n];
       strcpy(vzvarstr,&arg[9][2]);
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
 
-  } else error->all(FLERR,"Illegal fix move command");
+  } else error->all(FLERR,"Illegal fix meso/move command");
 
   // optional args
 
@@ -166,33 +172,26 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
 
   while (iarg < narg) {
     if (strcmp(arg[iarg],"units") == 0) {
-      if (iarg+2 > narg) error->all(FLERR,"Illegal fix move command");
+      if (iarg+2 > narg) error->all(FLERR,"Illegal fix meso/move command");
       if (strcmp(arg[iarg+1],"box") == 0) scaleflag = 0;
       else if (strcmp(arg[iarg+1],"lattice") == 0) scaleflag = 1;
-      else error->all(FLERR,"Illegal fix move command");
+      else error->all(FLERR,"Illegal fix meso/move command");
       iarg += 2;
-    } else error->all(FLERR,"Illegal fix move command");
+    } else error->all(FLERR,"Illegal fix meso/move command");
   }
 
   // error checks and warnings
 
   if (domain->dimension == 2) {
     if (mstyle == LINEAR && vzflag && vz != 0.0)
-      error->all(FLERR,"Fix move cannot set linear z motion for 2d problem");
+      error->all(FLERR,"Fix meso/move cannot set linear z motion for 2d problem");
     if (mstyle == WIGGLE && azflag && az != 0.0)
-      error->all(FLERR,"Fix move cannot set wiggle z motion for 2d problem");
+      error->all(FLERR,"Fix meso/move cannot set wiggle z motion for 2d problem");
     if (mstyle == ROTATE && (axis[0] != 0.0 || axis[1] != 0.0))
-      error->all(FLERR,
-                 "Fix move cannot rotate aroung non z-axis for 2d problem");
+      error->all(FLERR, "Fix meso/move cannot rotate aroung non z-axis for 2d problem");
     if (mstyle == VARIABLE && (zvarstr || vzvarstr))
-      error->all(FLERR,
-                 "Fix move cannot define z or vz variable for 2d problem");
+      error->all(FLERR, "Fix meso/move cannot define z or vz variable for 2d problem");
   }
-
-  if (atom->angmom_flag && comm->me == 0)
-    error->warning(FLERR,"Fix move does not update angular momentum");
-  if (atom->ellipsoid_flag && comm->me == 0)
-    error->warning(FLERR,"Fix move does not update quaternions");
 
   // setup scaling and apply scaling factors to velocity & amplitude
 
@@ -219,27 +218,22 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
 
   // set omega_rotate from period
 
-  if (mstyle == WIGGLE || mstyle == ROTATE) omega_rotate = 2.0*MY_PI / period;
+  if (mstyle == WIGGLE || mstyle == ROTATE) omega_rotate = MY_2PI / period;
 
   // runit = unit vector along rotation axis
 
   if (mstyle == ROTATE) {
     double len = sqrt(axis[0]*axis[0] + axis[1]*axis[1] + axis[2]*axis[2]);
     if (len == 0.0)
-      error->all(FLERR,"Zero length rotation vector with fix move");
+      error->all(FLERR,"Zero length rotation vector with fix meso/move");
     runit[0] = axis[0]/len;
     runit[1] = axis[1]/len;
     runit[2] = axis[2]/len;
   }
 
-  // set omega_flag if particles store omega
-
-  omega_flag = atom->omega_flag;
-
   // perform initial allocation of atom-based array
   // register with Atom class
 
-  xoriginal = NULL;
   grow_arrays(atom->nmax);
   atom->add_callback(0);
   atom->add_callback(1);
@@ -263,8 +257,7 @@ FixMoveSPH::FixMoveSPH(LAMMPS *lmp, int narg, char **arg) :
 
 /* ---------------------------------------------------------------------- */
 
-FixMoveSPH::~FixMoveSPH()
-{
+FixMesoMove::~FixMesoMove () {
   // unregister callbacks to this fix from Atom class
 
   atom->delete_callback(id,0);
@@ -286,8 +279,7 @@ FixMoveSPH::~FixMoveSPH()
 
 /* ---------------------------------------------------------------------- */
 
-int FixMoveSPH::setmask()
-{
+int FixMesoMove::setmask () {
   int mask = 0;
   mask |= INITIAL_INTEGRATE;
   mask |= FINAL_INTEGRATE;
@@ -297,8 +289,7 @@ int FixMoveSPH::setmask()
 
 /* ---------------------------------------------------------------------- */
 
-void FixMoveSPH::init()
-{
+void FixMesoMove::init () {
   dt = update->dt;
   dtv = update->dt;
   dtf = 0.5 * update->dt * force->ftm2v;
@@ -310,51 +301,45 @@ void FixMoveSPH::init()
   if (mstyle == VARIABLE) {
     if (xvarstr) {
       xvar = input->variable->find(xvarstr);
-      if (xvar < 0) error->all(FLERR,
-                               "Variable name for fix move does not exist");
+      if (xvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(xvar)) xvarstyle = EQUAL;
       else if (input->variable->atomstyle(xvar)) xvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
     if (yvarstr) {
       yvar = input->variable->find(yvarstr);
-      if (yvar < 0) error->all(FLERR,
-                               "Variable name for fix move does not exist");
+      if (yvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(yvar)) yvarstyle = EQUAL;
       else if (input->variable->atomstyle(yvar)) yvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
     if (zvarstr) {
       zvar = input->variable->find(zvarstr);
-      if (zvar < 0) error->all(FLERR,
-                               "Variable name for fix move does not exist");
+      if (zvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(zvar)) zvarstyle = EQUAL;
       else if (input->variable->atomstyle(zvar)) zvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
     if (vxvarstr) {
       vxvar = input->variable->find(vxvarstr);
-      if (vxvar < 0) error->all(FLERR,
-                                "Variable name for fix move does not exist");
+      if (vxvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(vxvar)) vxvarstyle = EQUAL;
       else if (input->variable->atomstyle(vxvar)) vxvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
     if (vyvarstr) {
       vyvar = input->variable->find(vyvarstr);
-      if (vyvar < 0) error->all(FLERR,
-                                "Variable name for fix move does not exist");
+      if (vyvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(vyvar)) vyvarstyle = EQUAL;
       else if (input->variable->atomstyle(vyvar)) vyvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
     if (vzvarstr) {
       vzvar = input->variable->find(vzvarstr);
-      if (vzvar < 0) error->all(FLERR,
-                                "Variable name for fix move does not exist");
+      if (vzvar < 0) error->all(FLERR, "Variable name for fix meso/move does not exist");
       if (input->variable->equalstyle(vzvar)) vzvarstyle = EQUAL;
       else if (input->variable->atomstyle(vzvar)) vzvarstyle = ATOM;
-      else error->all(FLERR,"Variable for fix move is invalid style");
+      else error->all(FLERR,"Variable for fix meso/move is invalid style");
     }
 
     if (xvarstr && xvarstyle == ATOM) displaceflag = 1;
@@ -374,8 +359,7 @@ void FixMoveSPH::init()
   else velocity = NULL;
 }
 
-void FixMoveSPH::setup_pre_force(int vflag)
-{
+void FixMesoMove::setup_pre_force (int /*vflag*/) {
   // set vest equal to v 
   double **v = atom->v;
   double **vest = atom->vest;
@@ -397,11 +381,10 @@ void FixMoveSPH::setup_pre_force(int vflag)
    set x,v of particles
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::initial_integrate(int vflag)
-{
+void FixMesoMove::initial_integrate (int /*vflag*/) {
+  double ddotr,dx,dy,dz;
   double dtfm;
   double xold[3],a[3],b[3],c[3],d[3],disp[3],disp_next[3];
-  double ddotr,dx,dy,dz;
 
   double delta = (update->ntimestep - time_origin) * dt;
   double delta_next = (update->ntimestep - time_origin + 1) * dt;
@@ -478,7 +461,6 @@ void FixMoveSPH::initial_integrate(int vflag)
     double arg_next = omega_rotate * delta_next;
     double sine = sin(arg);
     double cosine = cos(arg);
-    double sine_next = sin(arg_next);
     double cosine_next = cos(arg_next);
 
     for (int i = 0; i < nlocal; i++) {
@@ -587,11 +569,6 @@ void FixMoveSPH::initial_integrate(int vflag)
         vest[i][0] = omega_rotate * (runit[1]*disp_next[2] - runit[2]*disp_next[1]);
         vest[i][1] = omega_rotate * (runit[2]*disp_next[0] - runit[0]*disp_next[2]);
         vest[i][2] = omega_rotate * (runit[0]*disp_next[1] - runit[1]*disp_next[0]);
-        if (omega_flag) {
-          omega[i][0] = omega_rotate*runit[0];
-          omega[i][1] = omega_rotate*runit[1];
-          omega[i][2] = omega_rotate*runit[2];
-        }
 
         domain->remap_near(x[i],xold);
       }
@@ -603,7 +580,7 @@ void FixMoveSPH::initial_integrate(int vflag)
 
     // reallocate displace and velocity arrays as necessary
 
-    if ((displaceflag || velocityflag) && nlocal > maxatom) {
+    if ((displaceflag || velocityflag) && atom->nmax > maxatom) {
       maxatom = atom->nmax;
       if (displaceflag) {
         memory->destroy(displace);
@@ -648,7 +625,7 @@ void FixMoveSPH::initial_integrate(int vflag)
 
     // update x,v
     // vest (velocity in next step) could be different from v in the next
-    // step, but this is the nest we could do
+    // step, but this is the best we could do
 
     for (int i = 0; i < nlocal; i++) {
       if (mask[i] & groupbit) {
@@ -657,16 +634,28 @@ void FixMoveSPH::initial_integrate(int vflag)
         xold[2] = x[i][2];
 
         if (xvarstr && vxvarstr) {
-          if (vxvarstyle == EQUAL) vest[i][0] = v[i][0] = vx;
-          else vest[i][0] = v[i][0] = velocity[i][0];
+          if (vxvarstyle == EQUAL) {
+            vest[i][0] = 2*vx - v[i][0];
+            v[i][0] = vx;
+          }
+          else {
+            vest[i][0] = 2*velocity[i][0] - v[i][0];
+            v[i][0] = velocity[i][0];
+          }
           if (xvarstyle == EQUAL) x[i][0] = xoriginal[i][0] + dx;
           else x[i][0] = xoriginal[i][0] + displace[i][0];
         } else if (xvarstr) {
           if (xvarstyle == EQUAL) x[i][0] = xoriginal[i][0] + dx;
           else x[i][0] = xoriginal[i][0] + displace[i][0];
         } else if (vxvarstr) {
-          if (vxvarstyle == EQUAL) vest[i][0] = v[i][0] = vx;
-          else vest[i][0] = v[i][0] = velocity[i][0];
+          if (vxvarstyle == EQUAL) {
+            vest[i][0] = 2*vx - v[i][0];
+            v[i][0] = vx;
+          }
+          else {
+            vest[i][0] = 2*velocity[i][0] - v[i][0];
+            v[i][0] = velocity[i][0];
+          }
           x[i][0] += dtv * v[i][0];
         } else {
           dtfm = rmass_flag ? dtf / rmass[i] : dtf / mass[type[i]];
@@ -676,16 +665,28 @@ void FixMoveSPH::initial_integrate(int vflag)
         }
 
         if (yvarstr && vyvarstr) {
-          if (vyvarstyle == EQUAL) vest[i][1] = v[i][1] = vy;
-          else vest[i][1] = v[i][1] = velocity[i][1];
+          if (vyvarstyle == EQUAL) {
+            vest[i][1] = 2*vy - v[i][1];
+            v[i][1] = vy;
+          }
+          else {
+            vest[i][1] = 2*velocity[i][1] - v[i][1];
+            v[i][1] = velocity[i][1];
+          }
           if (yvarstyle == EQUAL) x[i][1] = xoriginal[i][1] + dy;
           else x[i][1] = xoriginal[i][1] + displace[i][1];
         } else if (yvarstr) {
           if (yvarstyle == EQUAL) x[i][1] = xoriginal[i][1] + dy;
           else x[i][1] = xoriginal[i][1] + displace[i][1];
         } else if (vyvarstr) {
-          if (vyvarstyle == EQUAL) vest[i][1] = v[i][1] = vy;
-          else vest[i][1] = v[i][1] = velocity[i][1];
+          if (vyvarstyle == EQUAL) {
+            vest[i][1] = 2*vy - v[i][1];
+            v[i][1] = vy;
+          }
+          else {
+            vest[i][1] = 2*velocity[i][1] - v[i][1];
+            v[i][1] = velocity[i][1];
+          }
           x[i][1] += dtv * v[i][1];
         } else {
           dtfm = rmass_flag ? dtf / rmass[i] : dtf / mass[type[i]];
@@ -695,16 +696,28 @@ void FixMoveSPH::initial_integrate(int vflag)
         }
 
         if (zvarstr && vzvarstr) {
-          if (vzvarstyle == EQUAL) vest[i][2] = v[i][2] = vz;
-          else vest[i][2] = v[i][2] = velocity[i][2];
+          if (vzvarstyle == EQUAL) {
+            vest[i][2] = 2*vz - v[i][2];
+            v[i][2] = vz;
+          }
+          else {
+            vest[i][2] = 2*velocity[i][2] - v[i][2];
+            v[i][2] = velocity[i][2];
+          }
           if (zvarstyle == EQUAL) x[i][2] = xoriginal[i][2] + dz;
           else x[i][2] = xoriginal[i][2] + displace[i][2];
         } else if (zvarstr) {
           if (zvarstyle == EQUAL) x[i][2] = xoriginal[i][2] + dz;
           else x[i][2] = xoriginal[i][2] + displace[i][2];
         } else if (vzvarstr) {
-          if (vzvarstyle == EQUAL) vest[i][2] = v[i][2] = vz;
-          else vest[i][2] = v[i][2] = velocity[i][2];
+          if (vzvarstyle == EQUAL) {
+            vest[i][2] = 2*vz - v[i][2];
+            v[i][2] = vz;
+          }
+          else {
+            vest[i][2] = 2*velocity[i][2] - v[i][2];
+            v[i][2] = velocity[i][2];
+          }
           x[i][2] += dtv * v[i][2];
         } else {
           dtfm = rmass_flag ? dtf / rmass[i] : dtf / mass[type[i]];
@@ -723,8 +736,7 @@ void FixMoveSPH::initial_integrate(int vflag)
    final NVE of particles with NULL components
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::final_integrate()
-{
+void FixMesoMove::final_integrate () {
   double dtfm;
 
   int xflag = 1;
@@ -788,8 +800,7 @@ void FixMoveSPH::final_integrate()
    memory usage of local atom-based array
 ------------------------------------------------------------------------- */
 
-double FixMoveSPH::memory_usage()
-{
+double FixMesoMove::memory_usage () {
   double bytes = atom->nmax*3 * sizeof(double);
   if (displaceflag) bytes += atom->nmax*3 * sizeof(double);
   if (velocityflag) bytes += atom->nmax*3 * sizeof(double);
@@ -800,8 +811,7 @@ double FixMoveSPH::memory_usage()
    pack entire state of Fix into one write
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::write_restart(FILE *fp)
-{
+void FixMesoMove::write_restart (FILE *fp) {
   int n = 0;
   double list[1];
   list[n++] = time_origin;
@@ -817,8 +827,7 @@ void FixMoveSPH::write_restart(FILE *fp)
    use state info from restart file to restart the Fix
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::restart(char *buf)
-{
+void FixMesoMove::restart (char *buf) {
   int n = 0;
   double *list = (double *) buf;
 
@@ -829,8 +838,7 @@ void FixMoveSPH::restart(char *buf)
    allocate atom-based array
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::grow_arrays(int nmax)
-{
+void FixMesoMove::grow_arrays (int nmax) {
   memory->grow(xoriginal,nmax,3,"move:xoriginal");
   array_atom = xoriginal;
 }
@@ -839,8 +847,7 @@ void FixMoveSPH::grow_arrays(int nmax)
    copy values within local atom-based array
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::copy_arrays(int i, int j, int delflag)
-{
+void FixMesoMove::copy_arrays (int i, int j, int /*delflag*/) {
   xoriginal[j][0] = xoriginal[i][0];
   xoriginal[j][1] = xoriginal[i][1];
   xoriginal[j][2] = xoriginal[i][2];
@@ -850,8 +857,7 @@ void FixMoveSPH::copy_arrays(int i, int j, int delflag)
    initialize one atom's array values, called when atom is created
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::set_arrays(int i)
-{
+void FixMesoMove::set_arrays (int i) {
   double **x = atom->x;
   imageint *image = atom->image;
   int *mask = atom->mask;
@@ -873,7 +879,7 @@ void FixMoveSPH::set_arrays(int i)
   // backup particle to time_origin
 
   if (mstyle == VARIABLE)
-    error->all(FLERR,"Cannot add atoms to fix move variable");
+    error->all(FLERR,"Cannot add atoms to fix meso/move variable");
 
   domain->unmap(x[i],image[i],xoriginal[i]);
   double delta = (update->ntimestep - time_origin) * update->dt;
@@ -921,8 +927,7 @@ void FixMoveSPH::set_arrays(int i)
    pack values in local atom-based array for exchange with another proc
 ------------------------------------------------------------------------- */
 
-int FixMoveSPH::pack_exchange(int i, double *buf)
-{
+int FixMesoMove::pack_exchange (int i, double *buf) {
   buf[0] = xoriginal[i][0];
   buf[1] = xoriginal[i][1];
   buf[2] = xoriginal[i][2];
@@ -933,8 +938,7 @@ int FixMoveSPH::pack_exchange(int i, double *buf)
    unpack values in local atom-based array from exchange with another proc
 ------------------------------------------------------------------------- */
 
-int FixMoveSPH::unpack_exchange(int nlocal, double *buf)
-{
+int FixMesoMove::unpack_exchange (int nlocal, double *buf) {
   xoriginal[nlocal][0] = buf[0];
   xoriginal[nlocal][1] = buf[1];
   xoriginal[nlocal][2] = buf[2];
@@ -945,8 +949,7 @@ int FixMoveSPH::unpack_exchange(int nlocal, double *buf)
    pack values in local atom-based arrays for restart file
 ------------------------------------------------------------------------- */
 
-int FixMoveSPH::pack_restart(int i, double *buf)
-{
+int FixMesoMove::pack_restart (int i, double *buf) {
   buf[0] = 4;
   buf[1] = xoriginal[i][0];
   buf[2] = xoriginal[i][1];
@@ -958,8 +961,7 @@ int FixMoveSPH::pack_restart(int i, double *buf)
    unpack values from atom->extra array to restart the fix
 ------------------------------------------------------------------------- */
 
-void FixMoveSPH::unpack_restart(int nlocal, int nth)
-{
+void FixMesoMove::unpack_restart (int nlocal, int nth) {
   double **extra = atom->extra;
 
   // skip to Nth set of extra values
@@ -977,8 +979,7 @@ void FixMoveSPH::unpack_restart(int nlocal, int nth)
    maxsize of any atom's restart data
 ------------------------------------------------------------------------- */
 
-int FixMoveSPH::maxsize_restart()
-{
+int FixMesoMove::maxsize_restart () {
   return 4;
 }
 
@@ -986,14 +987,12 @@ int FixMoveSPH::maxsize_restart()
    size of atom nlocal's restart data
 ------------------------------------------------------------------------- */
 
-int FixMoveSPH::size_restart(int nlocal)
-{
+int FixMesoMove::size_restart (int nlocal) {
   return 4;
 }
 
 /* ---------------------------------------------------------------------- */
 
-void FixMoveSPH::reset_dt()
-{
-  error->all(FLERR,"Resetting timestep size is not allowed with fix move");
+void FixMesoMove::reset_dt () {
+  error->all(FLERR,"Resetting timestep size is not allowed with fix meso/move");
 }
